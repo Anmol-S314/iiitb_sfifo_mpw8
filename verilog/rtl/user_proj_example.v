@@ -1,3 +1,4 @@
+
 // SPDX-FileCopyrightText: 2020 Efabless Corporation
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -69,97 +70,73 @@ module user_proj_example #(
     output [2:0] irq
 );
     wire clk;
-    wire rst;
+    wire ori;
+    wire [7:0] iData;
+    wire [7:0] oData;
+    wire write, read, full, empty;
 
     wire [`MPRJ_IO_PADS-1:0] io_in;
     wire [`MPRJ_IO_PADS-1:0] io_out;
     wire [`MPRJ_IO_PADS-1:0] io_oeb;
 
-    wire [31:0] rdata; 
-    wire [31:0] wdata;
-    wire [BITS-1:0] count;
-
-    wire valid;
-    wire [3:0] wstrb;
-    wire [31:0] la_write;
-
-    // WB MI A
-    assign valid = wbs_cyc_i && wbs_stb_i; 
-    assign wstrb = wbs_sel_i & {4{wbs_we_i}};
-    assign wbs_dat_o = rdata;
-    assign wdata = wbs_dat_i;
+   
 
     // IO
-    assign io_out = count;
-    assign io_oeb = {(`MPRJ_IO_PADS-1){rst}};
+    assign clk = wb_clk_i;
+    assign ori = wb_rst_i;
+    assign io_in[37:30] = iData;
+    assign io_in[29] = write;
+    assign io_in[28] = read;
+    assign io_out[37:30] = oData;
+    assign io_out[29] = full;
+    assign io_out[28] = empty;
+    assign io_oeb = 0;
 
     // IRQ
     assign irq = 3'b000;	// Unused
 
-    // LA
-    assign la_data_out = {{(127-BITS){1'b0}}, count};
-    // Assuming LA probes [63:32] are for controlling the count register  
-    assign la_write = ~la_oenb[63:32] & ~{BITS{valid}};
-    // Assuming LA probes [65:64] are for controlling the count clk & reset  
-    assign clk = (~la_oenb[64]) ? la_data_in[64]: wb_clk_i;
-    assign rst = (~la_oenb[65]) ? la_data_in[65]: wb_rst_i;
-
-    counter #(
-        .BITS(BITS)
-    ) counter(
-        .clk(clk),
-        .reset(rst),
-        .ready(wbs_ack_o),
-        .valid(valid),
-        .rdata(rdata),
-        .wdata(wbs_dat_i),
-        .wstrb(wstrb),
-        .la_write(la_write),
-        .la_input(la_data_in[63:32]),
-        .count(count)
-    );
+	iiitb_sfifo instance (clk,ori,write,read,iData,oData,full,empty);
+    
 
 endmodule
+module iiitb_sfifo(clk,ori,write,read,iData,oData,full,empty);
 
-module counter #(
-    parameter BITS = 32
-)(
-    input clk,
-    input reset,
-    input valid,
-    input [3:0] wstrb,
-    input [BITS-1:0] wdata,
-    input [BITS-1:0] la_write,
-    input [BITS-1:0] la_input,
-    output ready,
-    output [BITS-1:0] rdata,
-    output [BITS-1:0] count
-);
-    reg ready;
-    reg [BITS-1:0] count;
-    reg [BITS-1:0] rdata;
+reg [4:0] wp;          //write point should add 1 bit(N+1) 
+reg [4:0] rp;          //read point
+reg [7:0] RAM [15:0];  //deep16,8 bit RAM
+reg [7:0] oData_reg;   //regsiter of oData
 
-    always @(posedge clk) begin
-        if (reset) begin
-            count <= 0;
-            ready <= 0;
-        end else begin
-            ready <= 1'b0;
-            if (~|la_write) begin
-                count <= count + 1;
-            end
-            if (valid && !ready) begin
-                ready <= 1'b1;
-                rdata <= count;
-                if (wstrb[0]) count[7:0]   <= wdata[7:0];
-                if (wstrb[1]) count[15:8]  <= wdata[15:8];
-                if (wstrb[2]) count[23:16] <= wdata[23:16];
-                if (wstrb[3]) count[31:24] <= wdata[31:24];
-            end else if (|la_write) begin
-                count <= la_write & la_input;
-            end
-        end
-    end
+always @ ( posedge CLK or negedge RSTn )
+begin                  //write to RAM
+	if (!RSTn)
+	begin
+		wp <= 5'b0;
+	end
+	else if ( write )
+	begin
+		RAM[wp[3:0]] <= iData;
+		wp <= wp + 1'b1;
+	end
+end
+
+always @ ( posedge CLK or negedge RSTn )
+begin                  // read from RAM
+	if (!RSTn)
+	begin
+		rp <= 5'b0;
+		oData_reg <= 8'b0;
+	end
+	else if ( read  )
+	begin
+		oData_reg <= RAM[rp[3:0]];
+		rp <= rp + 1'b1;
+	end
+end
+
+
+assign full = ( wp[4] ^ rp[4] & wp[3:0] == rp[3:0] );
+assign empty = ( wp == rp );
+assign oData = oData_reg;
+
 
 endmodule
-`default_nettype wire
