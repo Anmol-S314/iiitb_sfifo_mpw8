@@ -69,11 +69,14 @@ module user_proj_example #(
     // IRQ
     output [2:0] irq
 );
-    wire clk;
-    wire ori;
+    wire CLK;
+    wire RSTn;
     wire [7:0] iData;
     wire [7:0] oData;
-    wire write, read, full, empty;
+    wire write;
+    wire read;
+    wire full;
+    wire empty;
 
     wire [`MPRJ_IO_PADS-1:0] io_in;
     wire [`MPRJ_IO_PADS-1:0] io_out;
@@ -82,24 +85,24 @@ module user_proj_example #(
    
 
     // IO
-    assign clk = wb_clk_i;
-    assign ori = wb_rst_i;
-    assign io_in[37:30] = iData;
-    assign io_in[29] = write;
-    assign io_in[28] = read;
-    assign io_out[37:30] = oData;
-    assign io_out[29] = full;
-    assign io_out[28] = empty;
+    assign CLK = wb_clk_i;
+    assign RSTn = wb_rst_i;
+    assign iData = io_in[37:30];
+    assign write = io_in[29];
+    assign read = io_in[28];
+    assign oData = io_out[37:30];
+    assign full = io_out[29];
+    assign empty = io_out[28];
     assign io_oeb = 0;
 
     // IRQ
     assign irq = 3'b000;	// Unused
 
-	iiitb_sfifo instance (clk,ori,write,read,iData,oData,full,empty);
+	iiitb_sfifo instance (CLK,RSTn,write,read,iData,oData,full,empty);
     
 
 endmodule
-module iiitb_sfifo(clk,ori,write,read,iData,oData,full,empty);
+module iiitb_sfifo(input CLK, input RSTn, input write, input read, input[7:0] iData, output[7:0] oData, output full, output empty);
 
 reg [4:0] wp;          //write point should add 1 bit(N+1) 
 reg [4:0] rp;          //read point
@@ -140,3 +143,4 @@ assign oData = oData_reg;
 
 
 endmodule
+
